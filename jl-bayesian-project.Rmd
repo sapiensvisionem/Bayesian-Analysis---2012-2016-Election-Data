@@ -1,0 +1,200 @@
+---
+title: "Bayesian Project"
+author: "James Lee"
+date: "12/5/2019"
+output: word_document
+---
+
+# Bayesian Project
+
+**Hierarchical Model**
+The data of the project contains 5 factors:
+Sex (2 levels)
+Race (4 levels)
+Age (5 levels)
+Education (3 levels)
+State (51 levels)
+The total number of combinations of levels is 6120.
+  
+
+```{r}
+dataPath <- 'C:/Users/jalee/Desktop/Bayesian/'
+dat<-read.csv(paste(dataPath,"MScA_32014_BayesianMethods_CourseProjectData.csv",sep="/"))
+str(dat)
+```
+  
+**2 Model**
+After running MCMC with the these data and the model obtain a Markov chain posterior sample for 870
+parameters including 2-way interactions.
+Each Markov chain of the stan object obama_fit has length 36000.
+
+```{r}
+load(paste(dataPath,"fit_ext_20160527_103144.Rdata",sep="/"))
+library(shinystan)
+```
+  
+**3 Analysis**
+```{r}
+library(HDInterval)
+library(rstan)
+MCMC<-rstan::extract(obama_fit)
+sum.obama_fit<-rstan::summary(obama_fit)[[1]]
+HDI95<-sum.obama_fit[,c(4,8)]
+selection<-apply(HDI95,1,function(z) findInterval(0,z)!=1)
+sum.obama_fit[selection,c(4,8)]
+
+plot(obama_fit,pars=c("b_0"))
+hist(MCMC$b_0)
+
+plot(obama_fit,pars=c("b_sex"))
+plot(obama_fit,pars=c("b_race"))
+plot(obama_fit,pars=c("b_age"))
+plot(obama_fit,pars=c("b_education"))
+plot(obama_fit,pars=c("b_state"))
+plot(obama_fit,pars=c("b_sex_race"))
+```
+  
+## Questions
+1. Find the most supportive groups corresponding to each of the main effects for
+Barack Obama in 2012
+2. Find the least supportive group corresponding to each of the main effects
+3. Compare odds of approval by males grouped by race and education. Which of
+such subgroups shows the highest and the lowest support for the candidate
+4. Answer the same question, but for females  
+
+**Main Effects**
+Sex (2 levels)
+Race (4 levels)
+Age (5 levels)
+Education (3 levels)
+State (51 levels)  
+
+```{r}
+#Sex
+sex<-MCMC$b_sex
+colnames(sex)<-levels(dat$sex)
+#Race
+race<-MCMC$b_race
+colnames(race)<-levels(dat$race)
+#Age
+age<-MCMC$b_age
+colnames(age)<-levels(dat$age)
+#Education
+education<-MCMC$b_education
+colnames(education)<-levels(dat$education)
+#State
+state<-MCMC$b_state
+colnames(state)<-levels(dat$state)
+#race_education (Q3,Q4)
+race_education<-MCMC$b_race_education
+dimnames(race_education)[[2]]<-levels(dat$race)
+dimnames(race_education)[[3]]<-levels(dat$education)
+#b_0
+intercept<-MCMC$b_0
+```
+
+*Sex*
+```{r}
+sex_means<-apply(sex,2,function(z) mean(z+intercept))
+sex_HDI<-apply(sex,2,function(z) hdi(z+intercept))
+sexOdds<-rbind(mean=exp(sex_means),exp(sex_HDI))
+sexOdds
+```  
+> Females were more supportive than males.  
+
+*Race*
+```{r}
+race_means<-apply(race,2,function(z) mean(z+intercept))
+race_HDI<-apply(race,2,function(z) hdi(z+intercept))
+raceOdds<-rbind(mean=exp(race_means),exp(race_HDI))
+raceOdds
+which.max(raceOdds[1,])
+```  
+> Black population was the most supportive
+
+*Age*
+```{r}
+age_means<-apply(age,2,function(z) mean(z+intercept))
+age_HDI<-apply(age,2,function(z) hdi(z+intercept))
+ageOdds<-rbind(mean=exp(age_means),exp(age_HDI))
+ageOdds
+which.max(ageOdds[1,])
+which.min(ageOdds[1,])
+```  
+> 18-24 was the most supportive group.
+> 55+ was the least supportive group.
+
+*Education*
+```{r}
+education_means<-apply(education,2,function(z) mean(z+intercept))
+education_HDI<-apply(education,2,function(z) hdi(z+intercept))
+educationOdds<-rbind(mean=exp(education_means),exp(education_HDI))
+educationOdds
+which.max(educationOdds[1,])
+which.min(educationOdds[1,])
+```  
+> College or More education level group was the most supportive group.
+> No College education level group was the least supportive group.
+
+*State*
+```{r}
+state_means<-apply(state,2,function(z) mean(z+intercept))
+state_HDI<-apply(state,2,function(z) hdi(z+intercept))
+stateOdds<-rbind(mean=exp(state_means),exp(state_HDI))
+stateOdds
+which.max(stateOdds[1,])
+which.min(stateOdds[1,])
+```
+> District of Columbia was the most supportive state.
+> Mississippi(MS) was the least supportive state.
+
+*Male and Education Interaction*
+```{r}
+odds_male<-rep(intercept+sex[,1],12)
+dim(odds_male)<-dim(race_education)
+odds_male<-odds_male+race_education
+odds_male[2,,]
+
+#race main effects
+race_matrix<-cbind(race,race,race)
+dim(race_matrix)<-dim(race_education)
+dimnames(race_matrix)<-dimnames(race_education)
+race_matrix[2,,]
+
+#education main effects
+education_matrix<-cbind(education,education,education,education)
+dim(education_matrix)<-dim(race_education)[c(1,3,2)]
+education_matrix<-aperm(education_matrix,c(1,3,2))
+dimnames(education_matrix)<-dimnames(race_education)
+education_matrix[2,,]
+
+#odds (final)
+odds_male<-odds_male+race_matrix+education_matrix
+odds_male[2,,]
+(odds_male_mean<-apply(odds_male,c(2,3),mean))
+(odds_male_hdi<-apply(odds_male,c(2,3),hdi))
+exp(odds_male_mean)
+exp(odds_male_hdi)
+```  
+>Among males, Black population with some college degree was the most supportive group.
+>Among males, White population with no college degree was the least supportive group.
+
+*Female and Education Interaction*
+```{r}
+odds_female<-rep(intercept+sex[,2],12)
+dim(odds_female)<-dim(race_education)
+odds_female<-odds_female+race_education+race_matrix+education_matrix
+(odds_female_mean<-apply(odds_female,c(2,3),mean))
+(odds_female_hdi<-apply(odds_female,c(2,3),hdi))
+exp(odds_female_mean)
+exp(odds_female_hdi)
+```  
+>Among females, black population with some college degree was the most supportive group.
+>Among females, white population with no college degree was the least supportive group.
+
+
+
+
+
+
+
